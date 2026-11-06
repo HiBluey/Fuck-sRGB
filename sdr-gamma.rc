@@ -12,10 +12,10 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "FileDescription", "Fuck sRGB"
-            VALUE "FileVersion", "1.1.0-preview"
-            VALUE "OriginalFilename", "Fuck-sRGB-1.1.0-preview.exe"
+            VALUE "FileVersion", "1.1.0"
+            VALUE "OriginalFilename", "Fuck-sRGB-1.1.0.exe"
             VALUE "ProductName", "Fuck sRGB"
-            VALUE "ProductVersion", "1.1.0-preview"
+            VALUE "ProductVersion", "1.1.0"
         END
     END
     BLOCK "VarFileInfo"
