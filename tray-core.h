@@ -23,9 +23,6 @@ enum class Mode : unsigned { Srgb, Gamma22, Gamma24, Gamma10, LegacyGamma26, Unk
 constexpr unsigned modeCount = static_cast<unsigned>(Mode::Unknown);
 constexpr unsigned selectableCount = static_cast<unsigned>(Mode::LegacyGamma26);
 constexpr unsigned index(Mode mode) { return static_cast<unsigned>(mode); }
-struct Region { DWORD offset, size; std::array<Digest, modeCount> hash; };
-struct Edit { DWORD offset; std::array<Byte, selectableCount> value; };
-#include "tray-patch-plan.h"
 
 struct Failure { const wchar_t* operation; DWORD code; };
 [[noreturn]] void fail(const wchar_t* operation, DWORD code = GetLastError()) {
@@ -67,13 +64,17 @@ struct Sha256 {
         if (status < 0) fail(L"Open SHA256", status);
     }
     ~Sha256() { BCryptCloseAlgorithmProvider(algo, 0); }
-    Digest operator()(std::vector<Byte>& data) const {
+    Digest operator()(const Byte* data, size_t size) const {
         Digest d{};
-        auto status = BCryptHash(algo, nullptr, 0, data.data(), static_cast<ULONG>(data.size()), d.data(), static_cast<ULONG>(d.size()));
+        auto status = BCryptHash(algo, nullptr, 0, const_cast<Byte*>(data),
+                                 static_cast<ULONG>(size), d.data(), static_cast<ULONG>(d.size()));
         if (status < 0) fail(L"SHA256", status);
         return d;
     }
+    Digest operator()(const std::vector<Byte>& data) const { return (*this)(data.data(), data.size()); }
 };
+
+#include "dwm-shaders.h"
 
 struct Module {
     ULONG_PTR address{};
@@ -188,13 +189,13 @@ bool readMemory(HANDLE p, ULONG_PTR address, void* target, SIZE_T size) {
 }
 
 
-Mode stateOf(HANDLE process, Module module, const Sha256& sha) {
-    const auto& last = regions[ARRAYSIZE(regions)-1];
+Mode stateOf(HANDLE process, Module module, const Sha256& sha, const dwmShaders::Plan& plan) {
+    const auto& last = plan.regions.back();
     if (!module.address || module.size < last.offset + last.size)
         return Mode::Unknown;
     std::array<bool, modeCount> matches;
     matches.fill(true);
-    for (const auto& region : regions) {
+    for (const auto& region : plan.regions) {
         std::vector<Byte> bytes(region.size);
         if (!readMemory(process, module.address + region.offset, bytes.data(), bytes.size()))
             fail(L"Read DWM shader library");
@@ -217,14 +218,14 @@ struct Span {
     std::vector<Byte> before, after;
 };
 
-void patch(HANDLE process, Module m, const Sha256& sha, Mode mode) {
-    if (stateOf(process, m, sha) != Mode::Srgb) fail(L"Original shader library check", ERROR_INVALID_DATA);
+void patch(HANDLE process, Module m, const Sha256& sha, const dwmShaders::Plan& plan, Mode mode) {
+    if (stateOf(process, m, sha, plan) != Mode::Srgb) fail(L"Original shader library check", ERROR_INVALID_DATA);
     SYSTEM_INFO sys{};
     GetSystemInfo(&sys);
     const auto pageSize = static_cast<ULONG_PTR>(sys.dwPageSize);
     std::vector<Page> pages;
     std::vector<Span> spans;
-    for (const auto& edit : edits) {
+    for (const auto& edit : plan.edits) {
         if (edit.value[0] == edit.value[index(mode)]) continue;
         const auto address = m.address + edit.offset;
         const auto page = address - address % pageSize;
@@ -273,7 +274,7 @@ void patch(HANDLE process, Module m, const Sha256& sha, Mode mode) {
             ++attempted;
             if (!write(span.address, span.after)) fail(L"Write shader bytes");
         }
-        if (stateOf(process, m, sha) != mode) fail(L"Patched shader library verification", ERROR_INVALID_DATA);
+        if (stateOf(process, m, sha, plan) != mode) fail(L"Patched shader library verification", ERROR_INVALID_DATA);
     } catch (...) {
         bool restored = true;
         for (size_t i = 0; i < attempted; ++i) restored &= write(spans[i].address, spans[i].before);
@@ -312,37 +313,36 @@ struct Patcher {
             fail(L"Identify the current desktop session");
     }
 
-    void verifyFile(const Sha256& sha) const {
+    dwmShaders::Plan shaderPlan(const Sha256& sha) const {
         std::ifstream file(std::filesystem::path{dll}, std::ios::binary);
         if (!file) fail(L"Open dwmcore.dll", ERROR_FILE_NOT_FOUND);
         std::vector<Byte> disk((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        if (sha(disk) != expectedDll)
-            fail(L"Unsupported dwmcore.dll build. Expected 10.0.26100.9949.", ERROR_REVISION_MISMATCH);
+        return dwmShaders::locate(disk, sha);
     }
 
     Current inspect() const {
         Sha256 sha;
-        verifyFile(sha);
+        const auto plan = shaderPlan(sha);
         DebugPrivilege debug;
         DWORD pid = currentDwm(session);
         if (!pid) fail(L"Find DWM for the current session", ERROR_NOT_FOUND);
         Handle process(OpenProcess(readRights, FALSE, pid));
         if (!process.value) fail(L"Open DWM");
         verifyImage(process, exe);
-        return {pid, stateOf(process, findModule(pid, dll), sha)};
+        return {pid, stateOf(process, findModule(pid, dll), sha, plan)};
     }
 
     Current set(Mode mode) const {
         if (index(mode) >= selectableCount) fail(L"Invalid gamma mode", ERROR_INVALID_PARAMETER);
         Sha256 sha;
-        verifyFile(sha);
+        const auto plan = shaderPlan(sha);
         DebugPrivilege debug;
         DWORD old = currentDwm(session);
         if (!old) fail(L"Find DWM for the current session", ERROR_NOT_FOUND);
         Handle process(OpenProcess(writeRights, FALSE, old));
         if (!process.value) fail(L"Open DWM");
         verifyImage(process, exe);
-        Mode current = stateOf(process, findModule(old, dll), sha);
+        Mode current = stateOf(process, findModule(old, dll), sha, plan);
         if (current == Mode::Unknown) fail(L"DWM shaders do not match a supported gamma mode", ERROR_INVALID_DATA);
         if (current == mode) return {old, mode};
 
@@ -363,11 +363,11 @@ struct Patcher {
                     if (!replacement.value) fail(L"Open the restarted DWM process");
                     verifyImage(replacement, exe);
                     if (mode == Mode::Srgb) {
-                        if (stateOf(replacement, module, sha) != Mode::Srgb)
+                        if (stateOf(replacement, module, sha, plan) != Mode::Srgb)
                             fail(L"Verify the restored native shaders", ERROR_INVALID_DATA);
                     } else {
                         Suspension suspended(replacement, suspend, resume);
-                        patch(replacement, module, sha, mode);
+                        patch(replacement, module, sha, plan, mode);
                         suspended.finish();
                     }
                     return {pid, mode};

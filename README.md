@@ -10,7 +10,7 @@ For a viewer expecting a pure 2.2 or 2.4 response, the sRGB curve maps dark nonz
 
 ## Using the tray
 
-Download `Fuck-sRGB-1.0.0.exe` from GitHub Releases and run it. The program requests administrator access to inspect and patch the Desktop Window Manager (DWM). Right-click its tray icon to choose a mode.
+Download the executable from GitHub Releases and run it. The program requests administrator access to inspect and patch the Desktop Window Manager (DWM). Right-click its tray icon to choose a mode.
 
 | Mode | Behavior on supported paths |
 | --- | --- |
@@ -24,20 +24,20 @@ All active displays must be in HDR mode to enable the curve controls. If HDR is 
 
 ### Compatibility
 
-| Component | Builds with patch data in v1.0.0 |
+| Component | Compatibility check |
 | --- | --- |
-| Windows 11 x64 DWM | `dwmcore.dll` **10.0.26100.9949** |
-| Microsoft Edge x64 | `msedge.dll` **156.0.4314.50** and **156.0.4314.58** |
+| Windows 11 x64 DWM | Requires six verified SDR shaders. The scanner has been tested against `dwmcore.dll` **10.0.26100.9711** and **10.0.26100.9818**. |
+| Microsoft Edge x64 | Requires an exact DLL SHA-256 match for **156.0.4314.50** or **156.0.4314.58**. |
 
-Each plan requires an exact SHA-256 match for the corresponding DLL. A Windows or Edge update can require a new plan even when the visible behavior looks the same. Edge compatibility applies to the additional browser patch. The DWM patch can still cover surfaces that reach one of its supported conversions.
+The DWM check accepts relocated shaders whose contents match the six entries in the allow-list. Windows updates that replace a target shader can require a new signature. Edge compatibility applies to the additional browser patch.
 
 ## How it works
 
 ### Desktop Window Manager
 
-On the supported build, the patch targets six allow-listed DXBC shaders for full-range BT.709/sRGB RGB input to scRGB, including the corresponding IA variants. The original shaders implement a piecewise curve with a linear toe and a 2.4-power branch. The patch changes the branch threshold, input offset, scale and exponent so positive SDR RGB values follow the selected power law. The shader's SDR white scaling remains in the path. BT.709 primaries and downstream composition, calibration and output conversion still have their original roles. Changing a per-channel transfer curve changes linear RGB values even with the same primaries.
+The patch targets six allow-listed DXBC shaders for full-range BT.709/sRGB RGB input to scRGB, including the corresponding IA variants. The original shaders implement a piecewise curve with a linear toe and a 2.4-power branch. The patch changes the branch threshold, input offset, scale and exponent so positive SDR RGB values follow the selected power law. The shader's SDR white scaling remains in the path. BT.709 primaries and downstream composition, calibration and output conversion still have their original roles. Changing a per-channel transfer curve changes linear RGB values even with the same primaries.
 
-The patch plan updates the DXBC checksums for the changed shader containers and their enclosing libraries. At runtime, the program verifies the on-disk DLL and the known in-memory shader-library hashes. When a mode changes, it restarts the current session's DWM, waits for the new instance to load the verified module, and briefly suspends it while applying the edits to copy-on-write pages. It checks the resulting hashes before resuming DWM. All writes target process memory.
+At startup the program scans the read-only data section of the on-disk `dwmcore.dll`. It parses the DXBC library entries, matches the full SHA-256 of each target shader, and requires every target to appear exactly once. It then prepares the patch using the locations it found and recomputes the checksums for both the edited shaders and their enclosing libraries. When a mode changes, it checks the loaded libraries against this plan, restarts the current session's DWM, and briefly suspends the new instance while applying the verified edits to copy-on-write pages. It checks the resulting library hashes before resuming DWM. All writes target process memory.
 
 ### Microsoft Edge
 
@@ -59,10 +59,10 @@ Use an x64 MSVC developer command prompt with a recent Windows SDK. Run these co
 
 ```bat
 rc /nologo sdr-gamma.rc
-cl /nologo /std:c++17 /W4 /O2 /utf-8 /EHsc /MT /Fe:Fuck-sRGB-1.0.0.exe sdr-gamma-tray.cpp sdr-gamma.res /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='requireAdministrator' uiAccess='false'" bcrypt.lib advapi32.lib user32.lib shell32.lib
+cl /nologo /std:c++17 /W4 /O2 /utf-8 /EHsc /MT /Fe:Fuck-sRGB-1.1.0-preview.exe sdr-gamma-tray.cpp sdr-gamma.res /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='requireAdministrator' uiAccess='false'" bcrypt.lib advapi32.lib user32.lib shell32.lib
 ```
 
-The generated headers `tray-patch-plan.h` and `edge-gamma-plan.h` supply the verified patch data. The resource script embeds the icon, version metadata and upstream browser patch license notice.
+The headers `tray-patch-plan.h` and `edge-gamma-plan.h` supply the DWM shader signatures and Edge patch data. The resource script embeds the icon, version metadata and upstream browser patch license notice.
 
 ## Acknowledgments
 
