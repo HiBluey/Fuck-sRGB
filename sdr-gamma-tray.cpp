@@ -17,7 +17,7 @@ enum class HdrState { Unavailable, Inactive, Active };
 
 HdrState detectHdr() noexcept {
     try {
-        return allActiveDisplaysHdr() ? HdrState::Active : HdrState::Inactive;
+        return anyActiveDisplayHdr() ? HdrState::Active : HdrState::Inactive;
     } catch (...) {
         return HdrState::Unavailable;
     }

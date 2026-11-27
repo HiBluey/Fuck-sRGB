@@ -399,7 +399,7 @@ private:
     }
 };
 
-inline bool allActiveDisplaysHdr() {
+inline bool anyActiveDisplayHdr() {
     constexpr UINT32 flags=QDC_ONLY_ACTIVE_PATHS;
     UINT32 count=0,modesCount=0;
     LONG error=GetDisplayConfigBufferSizes(flags,&count,&modesCount);
@@ -414,8 +414,8 @@ inline bool allActiveDisplaysHdr() {
         info.header={DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2,sizeof(info),target.adapterId,target.id};
         error=DisplayConfigGetDeviceInfo(&info.header);
         if (error) fail(L"Read display HDR status",error);
-        if (info.activeColorMode!=DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR) return false;
+        if (info.activeColorMode==DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR) return true;
     }
-    return count!=0;
+    return false;
 }
 

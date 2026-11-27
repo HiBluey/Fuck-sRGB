@@ -20,7 +20,7 @@ Download the executable from GitHub Releases and run it. The program requests ad
 | **Linear** | Uses `x` directly. The conspicuous change in shadows makes it easy to identify content that goes through the patch. |
 | **Exit** | Closes the tray and stops monitoring. |
 
-All active displays must be in HDR mode to enable the curve controls. If HDR is off, the display state is unavailable, or the desktop mixes HDR and SDR displays, only **Exit** remains available. A mode change restarts DWM and can briefly blank the screen. To undo the correction before closing the tray, choose **Native** first. **Exit** alone leaves existing in-memory edits in place until their processes exit.
+At least one active display must be in HDR mode to enable the curve controls. This allows mixed HDR and SDR desktop configurations, such as an HDR external monitor with an SDR laptop panel. If HDR is off on all active displays or the display state is unavailable, only **Exit** remains available. A mode change restarts DWM and can briefly blank the screen. To undo the correction before closing the tray, choose **Native** first. **Exit** alone leaves existing in-memory edits in place until their processes exit.
 
 ### Compatibility
 
@@ -59,7 +59,7 @@ Use an x64 MSVC developer command prompt with a recent Windows SDK. Run these co
 
 ```bat
 rc /nologo sdr-gamma.rc
-cl /nologo /std:c++17 /W4 /O2 /utf-8 /EHsc /MT /Fe:Fuck-sRGB-1.1.0.exe sdr-gamma-tray.cpp sdr-gamma.res /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='requireAdministrator' uiAccess='false'" bcrypt.lib advapi32.lib user32.lib shell32.lib
+cl /nologo /std:c++17 /W4 /O2 /utf-8 /EHsc /MT /Fe:Fuck-sRGB-1.2.0.exe sdr-gamma-tray.cpp sdr-gamma.res /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='requireAdministrator' uiAccess='false'" bcrypt.lib advapi32.lib user32.lib shell32.lib
 ```
 
 The headers `tray-patch-plan.h` and `edge-gamma-plan.h` supply the DWM shader signatures and Edge patch data. The resource script embeds the icon, version metadata and upstream browser patch license notice.
